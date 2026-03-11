@@ -3,14 +3,22 @@
 // Main page — Peak Randomizer
 // Shows a list selector dropdown and a "Surprise Me" button.
 // On click, picks a random peak from the selected list and displays a result card.
+// Phase 2 Tier 1: also fetches a Wikipedia photo + short description for the result card.
 
 import { useEffect, useState } from 'react'
 import { supabase, type List, type Peak } from '@/lib/supabase'
+
+// Wikipedia summary shape — only the fields we use
+type WikiSummary = {
+  extract: string | null       // short text description
+  imageUrl: string | null      // thumbnail image URL
+}
 
 export default function Home() {
   const [lists, setLists] = useState<List[]>([])
   const [selectedListId, setSelectedListId] = useState<string>('any')
   const [peak, setPeak] = useState<Peak | null>(null)
+  const [wiki, setWiki] = useState<WikiSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [listsLoading, setListsLoading] = useState(true)
@@ -33,11 +41,35 @@ export default function Home() {
     fetchLists()
   }, [])
 
+  // Fetch a Wikipedia summary (description + photo) for a peak name.
+  // Returns null silently if the article isn't found — card still works without it.
+  async function fetchWiki(peakName: string): Promise<WikiSummary> {
+    try {
+      const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(peakName)}`
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+      if (!res.ok) return { extract: null, imageUrl: null }
+
+      const json = await res.json()
+
+      // Truncate extract to 2 sentences max
+      const fullText: string = json.extract ?? ''
+      const sentences = fullText.match(/[^.!?]+[.!?]+/g) ?? []
+      const shortExtract = sentences.slice(0, 2).join(' ').trim() || null
+
+      const imageUrl: string | null = json.thumbnail?.source ?? null
+
+      return { extract: shortExtract, imageUrl }
+    } catch {
+      return { extract: null, imageUrl: null }
+    }
+  }
+
   // Pick a random peak from the selected list (or any list)
   async function surpriseMe() {
     setLoading(true)
     setError(null)
     setPeak(null)
+    setWiki(null)
 
     try {
       let peakIds: string[] = []
@@ -78,6 +110,10 @@ export default function Home() {
 
       if (peakError) throw peakError
       setPeak(peakData)
+
+      // Fetch Wikipedia data in the background — card shows immediately,
+      // photo + description appear as soon as the Wikipedia response arrives
+      fetchWiki(peakData.name).then(setWiki)
     } catch (err) {
       console.error(err)
       setError('Something went wrong. Try again.')
@@ -122,6 +158,7 @@ export default function Home() {
             onChange={(e) => {
               setSelectedListId(e.target.value)
               setPeak(null)
+              setWiki(null)
             }}
             disabled={listsLoading}
             className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-3 text-stone-100
@@ -158,7 +195,20 @@ export default function Home() {
 
       {/* Peak result card */}
       {peak && (
-        <div className="w-full max-w-lg bg-stone-900 border border-stone-800 rounded-2xl p-8 shadow-2xl">
+        <div className="w-full max-w-lg bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden shadow-2xl">
+
+          {/* Wikipedia hero photo — shown only if available */}
+          {wiki?.imageUrl && (
+            <div className="w-full h-52 overflow-hidden">
+              <img
+                src={wiki.imageUrl}
+                alt={peak.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+
+          <div className="p-8">
 
           {/* Peak name + state */}
           <div className="mb-6">
@@ -168,6 +218,13 @@ export default function Home() {
             <h2 className="text-3xl font-bold text-white leading-tight">{peak.name}</h2>
             <p className="text-stone-400 text-lg mt-1">{peak.state}</p>
           </div>
+
+          {/* Wikipedia description — shown only if available */}
+          {wiki?.extract && (
+            <p className="text-stone-400 text-sm leading-relaxed mb-6">
+              {wiki.extract}
+            </p>
+          )}
 
           {/* Stats grid */}
           <div className="grid grid-cols-2 gap-4 mb-6">
@@ -243,6 +300,8 @@ export default function Home() {
           >
             Not feeling it? Pick another →
           </button>
+
+          </div>{/* end p-8 inner wrapper */}
         </div>
       )}
 
