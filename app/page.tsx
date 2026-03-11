@@ -4,6 +4,7 @@
 // Shows a list selector, optional distance filter, and a "Surprise Me" button.
 // Phase 2 Tier 1: Wikipedia photo + description on result card.
 // Phase 2 Tier 2: Browser geolocation + haversine distance filter.
+// Phase 2 Tier 3: Nearest town (OSM Nominatim) + season guide (elevation heuristic).
 
 import { useEffect, useState } from 'react'
 import { supabase, type List, type Peak } from '@/lib/supabase'
@@ -36,6 +37,41 @@ const DISTANCE_OPTIONS: { label: string; miles: number | null }[] = [
   { label: 'Within 500 mi', miles: 500 },
 ]
 
+// Reverse-geocode a lat/lon to the nearest named place using OSM Nominatim.
+// Free, no key needed. Returns a string like "Lone Pine" or null if not found.
+async function fetchNearestTown(lat: number, lon: number): Promise<string | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'SummitSelector/1.0 (summit-selector.vercel.app)' },
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const addr = json.address ?? {}
+    // Walk from smallest to largest populated place name
+    return (
+      addr.city ?? addr.town ?? addr.village ?? addr.hamlet ?? addr.county ?? null
+    )
+  } catch {
+    return null
+  }
+}
+
+// Season guide based on elevation and state.
+// Returns a human-readable string like "Jun – Sep" or "Year-round".
+// Pure heuristic — no API needed.
+function getSeasonGuide(elevationFt: number, state: string): string {
+  if (state === 'Hawaii') return 'Year-round'
+  if (state === 'Alaska') {
+    return elevationFt > 14000 ? 'Jun – Jul' : 'May – Aug'
+  }
+  if (elevationFt < 4000)  return 'Mar – Nov'
+  if (elevationFt < 8000)  return 'Apr – Oct'
+  if (elevationFt < 12000) return 'May – Sep'
+  if (elevationFt < 14000) return 'Jun – Sep'
+  return 'Jul – Aug'
+}
+
 // Haversine formula — straight-line distance in miles between two lat/lon points
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 3959 // Earth radius in miles
@@ -58,6 +94,7 @@ export default function Home() {
   const [peakDistanceMi, setPeakDistanceMi] = useState<number | null>(null)
   const [driveTime, setDriveTime] = useState<DriveTime | null>(null)
   const [driveTimeLoading, setDriveTimeLoading] = useState(false)
+  const [nearestTown, setNearestTown] = useState<string | null>(null)
   const [wiki, setWiki] = useState<WikiSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -195,6 +232,7 @@ export default function Home() {
     setError(null)
     setPeak(null)
     setWiki(null)
+    setNearestTown(null)
     setPeakDistanceMi(null)
     setDriveTime(null)
     setDriveTimeLoading(false)
@@ -269,6 +307,10 @@ export default function Home() {
 
       // Fetch Wikipedia photo + description in the background
       fetchWiki(peakData.name).then(setWiki)
+
+      // Fetch nearest town via OSM Nominatim in the background
+      fetchNearestTown(Number(peakData.latitude), Number(peakData.longitude))
+        .then(setNearestTown)
     } catch (err) {
       console.error(err)
       setError('Something went wrong. Try again.')
@@ -314,6 +356,7 @@ export default function Home() {
               setSelectedListId(e.target.value)
               setPeak(null)
               setWiki(null)
+              setNearestTown(null)
               setPeakDistanceMi(null)
               setDriveTime(null)
             }}
@@ -478,6 +521,22 @@ export default function Home() {
                 <div className="bg-stone-800 rounded-xl p-4">
                   <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Type</p>
                   <p className="text-xl font-semibold text-white">{peak.peak_type}</p>
+                </div>
+              )}
+
+              {/* Best season — always shown, calculated from elevation + state */}
+              <div className="bg-stone-800 rounded-xl p-4">
+                <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Best Season</p>
+                <p className="text-xl font-semibold text-white">
+                  {getSeasonGuide(peak.elevation_ft, peak.state)}
+                </p>
+              </div>
+
+              {/* Nearest town — appears once Nominatim responds */}
+              {nearestTown && (
+                <div className="bg-stone-800 rounded-xl p-4">
+                  <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Nearest Town</p>
+                  <p className="text-xl font-semibold text-white leading-tight">{nearestTown}</p>
                 </div>
               )}
 
