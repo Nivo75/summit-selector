@@ -20,6 +20,13 @@ type UserLocation = {
   lon: number
 }
 
+// Drive time result from our /api/drive-time proxy
+type DriveTime = {
+  hours: number
+  minutes: number
+  distanceMi: number
+}
+
 // Distance options shown in the dropdown (null = no filter)
 const DISTANCE_OPTIONS: { label: string; miles: number | null }[] = [
   { label: 'Any Distance', miles: null },
@@ -49,6 +56,7 @@ export default function Home() {
   const [locationStatus, setLocationStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle')
   const [peak, setPeak] = useState<Peak | null>(null)
   const [peakDistanceMi, setPeakDistanceMi] = useState<number | null>(null)
+  const [driveTime, setDriveTime] = useState<DriveTime | null>(null)
   const [wiki, setWiki] = useState<WikiSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -132,6 +140,27 @@ export default function Home() {
     }
   }
 
+  // Call our server-side /api/drive-time proxy.
+  // Returns null silently if rate-limited or if an error occurs — card still shows without it.
+  async function fetchDriveTime(
+    originLat: number,
+    originLon: number,
+    destLat: number,
+    destLon: number
+  ): Promise<DriveTime | null> {
+    try {
+      const res = await fetch('/api/drive-time', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ originLat, originLon, destLat, destLon }),
+      })
+      if (!res.ok) return null
+      return await res.json()
+    } catch {
+      return null
+    }
+  }
+
   // Pick a random peak from the selected list (or any list),
   // optionally filtered to within maxDistanceMi of the user
   async function surpriseMe() {
@@ -140,6 +169,7 @@ export default function Home() {
     setPeak(null)
     setWiki(null)
     setPeakDistanceMi(null)
+    setDriveTime(null)
 
     // If distance filter is active but we don't have location yet, get it now
     let loc = userLocation
@@ -211,6 +241,14 @@ export default function Home() {
 
       // Fetch Wikipedia photo + description in the background
       fetchWiki(peakData.name).then(setWiki)
+
+      // Fetch drive time in the background if we have the user's location
+      if (loc) {
+        fetchDriveTime(
+          loc.lat, loc.lon,
+          Number(peakData.latitude), Number(peakData.longitude)
+        ).then((dt) => { if (dt) setDriveTime(dt) })
+      }
     } catch (err) {
       console.error(err)
       setError('Something went wrong. Try again.')
@@ -257,6 +295,7 @@ export default function Home() {
               setPeak(null)
               setWiki(null)
               setPeakDistanceMi(null)
+              setDriveTime(null)
             }}
             disabled={listsLoading}
             className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-3 text-stone-100
@@ -376,6 +415,19 @@ export default function Home() {
                 <p className="text-2xl font-bold text-white">{formatElevation(peak.elevation_ft)}</p>
                 <p className="text-sm text-stone-400">{toMeters(peak.elevation_ft)}</p>
               </div>
+
+              {/* Drive time — appears once the /api/drive-time response arrives */}
+              {driveTime && (
+                <div className="bg-stone-800 rounded-xl p-4">
+                  <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Drive Time</p>
+                  <p className="text-2xl font-bold text-white">
+                    {driveTime.hours > 0
+                      ? `${driveTime.hours} hr ${driveTime.minutes} min`
+                      : `${driveTime.minutes} min`}
+                  </p>
+                  <p className="text-sm text-stone-400">{driveTime.distanceMi.toLocaleString()} mi by road</p>
+                </div>
+              )}
 
               {peak.prominence_ft && (
                 <div className="bg-stone-800 rounded-xl p-4">
