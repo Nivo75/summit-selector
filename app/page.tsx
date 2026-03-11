@@ -57,19 +57,60 @@ async function fetchNearestTown(lat: number, lon: number): Promise<string | null
   }
 }
 
-// Season guide based on elevation and state.
-// Returns a human-readable string like "Jun – Sep" or "Year-round".
-// Pure heuristic — no API needed.
-function getSeasonGuide(elevationFt: number, state: string): string {
-  if (state === 'Hawaii') return 'Year-round'
+// Season + conditions check.
+// Returns the best-season label AND a contextual warning based on the current month.
+// No API needed — pure heuristic from elevation + state + today's date.
+type ConditionsInfo = {
+  seasonLabel: string    // e.g. "Jun – Sep"
+  warning: string | null // non-null when current month is outside the season window
+}
+
+function getConditionsInfo(elevationFt: number, state: string): ConditionsInfo {
+  if (state === 'Hawaii') return { seasonLabel: 'Year-round', warning: null }
+
+  let seasonLabel: string
+  let startMonth: number  // 1 = Jan
+  let endMonth: number
+
   if (state === 'Alaska') {
-    return elevationFt > 14000 ? 'Jun – Jul' : 'May – Aug'
+    if (elevationFt > 14000) {
+      seasonLabel = 'Jun – Jul'; startMonth = 6; endMonth = 7
+    } else {
+      seasonLabel = 'May – Aug'; startMonth = 5; endMonth = 8
+    }
+  } else if (elevationFt < 4000) {
+    seasonLabel = 'Mar – Nov'; startMonth = 3; endMonth = 11
+  } else if (elevationFt < 8000) {
+    seasonLabel = 'Apr – Oct'; startMonth = 4; endMonth = 10
+  } else if (elevationFt < 12000) {
+    seasonLabel = 'May – Sep'; startMonth = 5; endMonth = 9
+  } else if (elevationFt < 14000) {
+    seasonLabel = 'Jun – Sep'; startMonth = 6; endMonth = 9
+  } else {
+    seasonLabel = 'Jul – Aug'; startMonth = 7; endMonth = 8
   }
-  if (elevationFt < 4000)  return 'Mar – Nov'
-  if (elevationFt < 8000)  return 'Apr – Oct'
-  if (elevationFt < 12000) return 'May – Sep'
-  if (elevationFt < 14000) return 'Jun – Sep'
-  return 'Jul – Aug'
+
+  const month = new Date().getMonth() + 1 // 1–12
+  const inSeason = month >= startMonth && month <= endMonth
+
+  let warning: string | null = null
+  if (!inSeason) {
+    if (month === startMonth - 1) {
+      // One month before season opens
+      warning = `Season opens soon (${seasonLabel}). Snow may still be present at the summit — check conditions before heading out.`
+    } else if (month === endMonth + 1) {
+      // One month after season closes
+      warning = `Late season. Snow and ice increasing — verify trail conditions before going.`
+    } else if (month < startMonth) {
+      // Deep winter / early spring
+      warning = `Currently off-season (best: ${seasonLabel}). Expect snow and ice at the summit. Technical gear likely required.`
+    } else {
+      // Fall / winter after season
+      warning = `Currently off-season (best: ${seasonLabel}). Winter conditions setting in — expect snow and ice at the summit.`
+    }
+  }
+
+  return { seasonLabel, warning }
 }
 
 // Haversine formula — straight-line distance in miles between two lat/lon points
@@ -469,6 +510,19 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Conditions warning — amber banner shown when outside the season window */}
+            {(() => {
+              const { warning } = getConditionsInfo(peak.elevation_ft, peak.state)
+              return warning ? (
+                <div className="bg-amber-900/40 border border-amber-700/50 rounded-xl px-4 py-3 mb-6">
+                  <p className="text-xs text-amber-400 uppercase tracking-widest font-semibold mb-1">
+                    ⚠ Conditions Notice
+                  </p>
+                  <p className="text-amber-200 text-sm leading-relaxed">{warning}</p>
+                </div>
+              ) : null
+            })()}
+
             {/* Wikipedia description — shown only if available */}
             {wiki?.extract && (
               <p className="text-stone-400 text-sm leading-relaxed mb-6">
@@ -524,11 +578,11 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Best season — always shown, calculated from elevation + state */}
+              {/* Best season tile */}
               <div className="bg-stone-800 rounded-xl p-4">
                 <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Best Season</p>
                 <p className="text-xl font-semibold text-white">
-                  {getSeasonGuide(peak.elevation_ft, peak.state)}
+                  {getConditionsInfo(peak.elevation_ft, peak.state).seasonLabel}
                 </p>
               </div>
 
