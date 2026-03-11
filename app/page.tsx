@@ -189,6 +189,8 @@ const DISTANCE_OPTIONS = [
 export default function Home() {
   // App mode
   const [mode, setMode] = useState<'randomizer' | 'quiz'>('randomizer')
+  // Quiz phase: 'form' shows the questions, 'result' hides them and shows the card
+  const [quizPhase, setQuizPhase] = useState<'form' | 'result'>('form')
 
   // Lists
   const [lists, setLists] = useState<List[]>([])
@@ -260,11 +262,12 @@ export default function Home() {
   }
 
   // ── Core: find a random peak given explicit filter options ──────────────────
+  // Returns true if a peak was successfully found, false otherwise.
   async function findPeak(opts: {
     listId: string
     distanceMi: number | null
     maxElevationFt: number | null
-  }) {
+  }): Promise<boolean> {
     setLoading(true)
     setError(null)
     clearResult()
@@ -275,7 +278,7 @@ export default function Home() {
       if (!loc) {
         setError('Location access denied. Allow it in your browser to use the distance filter.')
         setLoading(false)
-        return
+        return false
       }
     }
 
@@ -286,7 +289,7 @@ export default function Home() {
       const { data: listData, error: listErr } = await q
       if (listErr) throw listErr
       let peakIds: string[] = (listData ?? []).map((r) => r.peak_id)
-      if (peakIds.length === 0) { setError('No peaks found for that list.'); return }
+      if (peakIds.length === 0) { setError('No peaks found for that list.'); return false }
 
       // Step 2 — if any spatial/elevation filter is active, fetch coords + elevation
       // and filter client-side (50 state highpoints is tiny; this scales fine for now)
@@ -310,7 +313,7 @@ export default function Home() {
 
         if (filtered.length === 0) {
           setError('No peaks matched your criteria. Try relaxing one of the filters.')
-          return
+          return false
         }
         peakIds = filtered.map((p) => p.id)
       }
@@ -329,9 +332,11 @@ export default function Home() {
 
       fetchWiki(peakData.name).then(setWiki)
       fetchNearestTown(Number(peakData.latitude), Number(peakData.longitude)).then(setNearestTown)
+      return true
     } catch (err) {
       console.error(err)
       setError('Something went wrong. Try again.')
+      return false
     } finally {
       setLoading(false)
     }
@@ -343,12 +348,13 @@ export default function Home() {
   }
 
   // Quiz entry point — converts quiz answers to filter values then calls findPeak
-  function submitQuiz() {
-    findPeak({
+  async function submitQuiz() {
+    const found = await findPeak({
       listId: quizList,
       distanceMi: driveToMiles(quizDrive),
       maxElevationFt: answersToMaxElevation(quizFitness, quizTime),
     })
+    if (found) setQuizPhase('result')
   }
 
   // Drive time on-demand
@@ -397,7 +403,7 @@ export default function Home() {
           ⛰ Surprise Me
         </button>
         <button
-          onClick={() => { setMode('quiz'); clearResult() }}
+          onClick={() => { setMode('quiz'); setQuizPhase('form'); clearResult() }}
           className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors
             ${mode === 'quiz' ? 'bg-emerald-600 text-white' : 'text-stone-400 hover:text-white'}`}
         >
@@ -462,8 +468,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Quiz mode ── */}
-      {mode === 'quiz' && (
+      {/* ── Quiz mode — only show the form while picking, not after a peak is found ── */}
+      {mode === 'quiz' && quizPhase === 'form' && (
         <div className="w-full max-w-lg bg-stone-900 border border-stone-800 rounded-2xl p-8 mb-8">
           <p className="text-xs text-emerald-500 uppercase tracking-widest font-semibold mb-6">
             Find My Next Peak
@@ -696,13 +702,30 @@ export default function Home() {
               </a>
             </div>
 
-            {/* Pick again */}
-            <button
-              onClick={mode === 'quiz' ? submitQuiz : surpriseMe}
-              className="w-full mt-4 text-sm text-stone-500 hover:text-stone-300 transition-colors py-2"
-            >
-              Not feeling it? Pick another →
-            </button>
+            {/* Pick again — two options in quiz mode, one in randomizer */}
+            {mode === 'quiz' ? (
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={submitQuiz}
+                  className="flex-1 text-sm text-stone-500 hover:text-stone-300 transition-colors py-2"
+                >
+                  Try another →
+                </button>
+                <button
+                  onClick={() => { setQuizPhase('form'); clearResult() }}
+                  className="flex-1 text-sm text-emerald-700 hover:text-emerald-500 transition-colors py-2"
+                >
+                  ← Adjust preferences
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={surpriseMe}
+                className="w-full mt-4 text-sm text-stone-500 hover:text-stone-300 transition-colors py-2"
+              >
+                Not feeling it? Pick another →
+              </button>
+            )}
 
           </div>
         </div>
