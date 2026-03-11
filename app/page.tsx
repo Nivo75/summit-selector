@@ -57,6 +57,7 @@ export default function Home() {
   const [peak, setPeak] = useState<Peak | null>(null)
   const [peakDistanceMi, setPeakDistanceMi] = useState<number | null>(null)
   const [driveTime, setDriveTime] = useState<DriveTime | null>(null)
+  const [driveTimeLoading, setDriveTimeLoading] = useState(false)
   const [wiki, setWiki] = useState<WikiSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -161,6 +162,29 @@ export default function Home() {
     }
   }
 
+  // Called when the user clicks "Get Drive Time" on the result card.
+  // Requests location if not already granted, then fetches from /api/drive-time.
+  async function requestDriveTime() {
+    if (!peak) return
+    setDriveTimeLoading(true)
+
+    let loc = userLocation
+    if (!loc) {
+      loc = await requestLocation()
+      if (!loc) {
+        setDriveTimeLoading(false)
+        return // location denied — button stays visible, nothing breaks
+      }
+    }
+
+    const dt = await fetchDriveTime(
+      loc.lat, loc.lon,
+      Number(peak.latitude), Number(peak.longitude)
+    )
+    setDriveTime(dt)
+    setDriveTimeLoading(false)
+  }
+
   // Pick a random peak from the selected list (or any list),
   // optionally filtered to within maxDistanceMi of the user
   async function surpriseMe() {
@@ -170,6 +194,7 @@ export default function Home() {
     setWiki(null)
     setPeakDistanceMi(null)
     setDriveTime(null)
+    setDriveTimeLoading(false)
 
     // If distance filter is active but we don't have location yet, get it now
     let loc = userLocation
@@ -241,14 +266,6 @@ export default function Home() {
 
       // Fetch Wikipedia photo + description in the background
       fetchWiki(peakData.name).then(setWiki)
-
-      // Fetch drive time in the background if we have the user's location
-      if (loc) {
-        fetchDriveTime(
-          loc.lat, loc.lon,
-          Number(peakData.latitude), Number(peakData.longitude)
-        ).then((dt) => { if (dt) setDriveTime(dt) })
-      }
     } catch (err) {
       console.error(err)
       setError('Something went wrong. Try again.')
@@ -416,8 +433,8 @@ export default function Home() {
                 <p className="text-sm text-stone-400">{toMeters(peak.elevation_ft)}</p>
               </div>
 
-              {/* Drive time — appears once the /api/drive-time response arrives */}
-              {driveTime && (
+              {/* Drive time — shows result tile once loaded, button otherwise */}
+              {driveTime ? (
                 <div className="bg-stone-800 rounded-xl p-4">
                   <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Drive Time</p>
                   <p className="text-2xl font-bold text-white">
@@ -427,6 +444,18 @@ export default function Home() {
                   </p>
                   <p className="text-sm text-stone-400">{driveTime.distanceMi.toLocaleString()} mi by road</p>
                 </div>
+              ) : (
+                <button
+                  onClick={requestDriveTime}
+                  disabled={driveTimeLoading}
+                  className="bg-stone-800 hover:bg-stone-700 rounded-xl p-4 text-left
+                             transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Drive Time</p>
+                  <p className="text-sm font-medium text-emerald-500">
+                    {driveTimeLoading ? 'Calculating…' : 'Tap to calculate →'}
+                  </p>
+                </button>
               )}
 
               {peak.prominence_ft && (
