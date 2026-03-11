@@ -126,6 +126,9 @@ export default function Home() {
 
       const json = await res.json()
 
+      // Disambiguation pages have no useful content — skip them
+      if (json.type === 'disambiguation') return { extract: null, imageUrl: null }
+
       // Truncate extract to 2 sentences max
       const fullText: string = json.extract ?? ''
       const sentences = fullText.match(/[^.!?]+[.!?]+/g) ?? []
@@ -389,13 +392,18 @@ export default function Home() {
       {peak && (
         <div className="w-full max-w-lg bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden shadow-2xl">
 
-          {/* Wikipedia hero photo — shown only if available */}
+          {/* Wikipedia hero photo — shown only if available and loads successfully */}
           {wiki?.imageUrl && (
             <div className="w-full h-52 overflow-hidden">
               <img
                 src={wiki.imageUrl}
                 alt={peak.name}
                 className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Hide the image container if the URL fails to load
+                  const parent = (e.target as HTMLImageElement).parentElement
+                  if (parent) parent.style.display = 'none'
+                }}
               />
             </div>
           )}
