@@ -682,7 +682,7 @@ export default function Home() {
                   Peakbagger →
                 </a>
               )}
-              <a href={`https://www.alltrails.com/search?q=${encodeURIComponent(peak.name)}`}
+              <a href={`https://www.alltrails.com/explore?lat=${peak.latitude}&lng=${peak.longitude}&zoom=13`}
                  target="_blank" rel="noopener noreferrer"
                  className="flex-1 text-center px-4 py-2.5 rounded-lg bg-stone-800 hover:bg-stone-700
                             text-stone-300 hover:text-white text-sm font-medium transition-colors">
