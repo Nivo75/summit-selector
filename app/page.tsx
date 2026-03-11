@@ -56,7 +56,12 @@ export default function Home() {
       const sentences = fullText.match(/[^.!?]+[.!?]+/g) ?? []
       const shortExtract = sentences.slice(0, 2).join(' ').trim() || null
 
-      const imageUrl: string | null = json.thumbnail?.source ?? null
+      // Wikipedia thumbnails embed the width in the URL, e.g. "320px-MountWhitney.jpg"
+      // Replace that width with 800 to get a high-res version from the same CDN
+      const rawUrl: string | null = json.thumbnail?.source ?? null
+      const imageUrl = rawUrl
+        ? rawUrl.replace(/\/\d+px-/, '/800px-')
+        : null
 
       return { extract: shortExtract, imageUrl }
     } catch {
