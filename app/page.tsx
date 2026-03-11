@@ -11,7 +11,8 @@ import { supabase, type List, type Peak } from '@/lib/supabase'
 
 type WikiSummary = {
   extract: string | null
-  imageUrl: string | null
+  imageUrl: string | null      // 800px bumped URL (preferred)
+  rawImageUrl: string | null   // original URL from Wikipedia (fallback)
 }
 
 type UserLocation = {
@@ -111,9 +112,9 @@ async function fetchWiki(peakName: string): Promise<WikiSummary> {
       `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(peakName)}`,
       { headers: { Accept: 'application/json' } }
     )
-    if (!res.ok) return { extract: null, imageUrl: null }
+    if (!res.ok) return { extract: null, imageUrl: null, rawImageUrl: null }
     const json = await res.json()
-    if (json.type === 'disambiguation') return { extract: null, imageUrl: null }
+    if (json.type === 'disambiguation') return { extract: null, imageUrl: null, rawImageUrl: null }
 
     const fullText: string = json.extract ?? ''
     const sentences = fullText.match(/[^.!?]+[.!?]+/g) ?? []
@@ -121,8 +122,8 @@ async function fetchWiki(peakName: string): Promise<WikiSummary> {
     const rawUrl: string | null = json.thumbnail?.source ?? null
     const imageUrl = rawUrl ? rawUrl.replace(/\/\d+px-/, '/800px-') : null
 
-    return { extract: shortExtract, imageUrl }
-  } catch { return { extract: null, imageUrl: null } }
+    return { extract: shortExtract, imageUrl, rawImageUrl: rawUrl }
+  } catch { return { extract: null, imageUrl: null, rawImageUrl: null } }
 }
 
 // Convert quiz drive answer to mile radius (null = no limit)
@@ -557,11 +558,20 @@ export default function Home() {
             <div className="w-full h-52 overflow-hidden">
               <img
                 src={wiki.imageUrl}
+                data-fallback={wiki.rawImageUrl ?? ''}
                 alt={peak.name}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  const p = (e.target as HTMLImageElement).parentElement
-                  if (p) p.style.display = 'none'
+                  // If the 800px URL fails, try the original Wikipedia URL.
+                  // If that also fails (or there's no fallback), hide the container.
+                  const img = e.target as HTMLImageElement
+                  const fallback = img.dataset.fallback
+                  if (fallback && img.src !== fallback) {
+                    img.src = fallback
+                  } else {
+                    const p = img.parentElement
+                    if (p) p.style.display = 'none'
+                  }
                 }}
               />
             </div>
