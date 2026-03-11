@@ -17,7 +17,9 @@ import requests
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-FIRECRAWL_API_KEY = "fc-83c3fa0720a14a7e8d977235147bf92b"
+# Load API key from environment variable (set in .env or export in shell)
+# Never hardcode API keys in source files — GitHub will flag them as exposed secrets
+FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 FIRECRAWL_SCRAPE  = "https://api.firecrawl.dev/v1/scrape"
 
 LIST_URL   = "https://www.peakbagger.com/List.aspx?lid=12003&cid=23310"
